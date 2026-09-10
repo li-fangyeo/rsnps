@@ -1,0 +1,105 @@
+---
+title: "Figures"
+format: html
+editor: visual
+Author: Li-Fang Yeo
+---
+
+## Study title
+
+Levaraging a genetic proxy to study the lifelong affects of adrenergic receptor blockers.
+
+Alternative title: Studying the effects of DBH deficiency in Finngen
+
+## Figures
+
+Forest plot
+
+```{r}
+##12072024
+#forest plot
+library(readr)
+library(forestploter)
+alpha <- read.delim("C:/Users/lifyeo/rrsnps/disease-cox.txt")
+#alpha$'' <- cut(alpha$'P', breaks=c(-Inf, 0.001, 0.01, 0.05, Inf), label=c("***", "**", "*", "")) 
+alpha
+alpha$` ` <- paste(rep(" ", 30), collapse = " ")
+
+# Create a confidence interval column to display
+alpha$`HR (95% CI)` <- sprintf("%.2f (%.2f to %.2f)",
+                          alpha$HR, alpha$lower95, alpha$upper95)
+alpha
+
+#make the words center
+tm <- forest_theme(base_size = 18,
+                   rowhead=list(fg_params=list(hjust=0, x=0)),
+                   colhead=list(fg_params=list(hjust=0.5, x=0.5)),
+                  #core=list(fg_params=list(hjust=0.5, x=0.5)),
+                   ci_Theight = 0.3,
+                   ci_lwd = 2)
+
+alpha_ft <- forest(alpha[,c(1:2, 9,8, 6:7)],
+                est = alpha$HR,
+                lower = alpha$lower95, 
+                upper = alpha$upper95,
+                #sizes = alpha$se,
+                ci_column = 4,
+                ref_line = 1,
+                xlim = c(0,2),
+                ticks_at = c(0.25, 0.5, 0.75, 1.25, 1.5, 1.75, 2),
+                #x_trans = c("log10"),
+                xlab = "Hazard ratio",
+                theme = tm)
+
+# Print plot
+plot(alpha_ft)
+
+# Save plots to PDF, specifying dimensions
+pdf("diseaseCox.pdf", width = 15, height = 10)
+print(alpha_ft)
+dev.off()
+```
+
+You can add options to executable code like this
+
+```{r}
+alpha <- read.delim("C:/Users/lifyeo/rrsnps/drug-hutan.txt")
+alpha
+alpha$` ` <- paste(rep(" ", 30), collapse = " ")
+
+# Create a confidence interval column to display
+alpha$`HR (95% CI)` <- sprintf("%.2f (%.2f to %.2f)",
+                          alpha$HR, alpha$lower95, alpha$upper95)
+alpha
+
+#make the words center
+tm <- forest_theme(base_size = 18,
+                   rowhead=list(fg_params=list(hjust=0, x=0)),
+                   colhead=list(fg_params=list(hjust=0.5, x=0.5)),
+                  #core=list(fg_params=list(hjust=0.5, x=0.5)),
+                   ci_Theight = 0.3,
+                   ci_lwd = 2)
+
+alpha_ft <- forest(alpha[,c(1:2, 9,8, 6:7)],
+                est = alpha$HR,
+                lower = alpha$lower95, 
+                upper = alpha$upper95,
+                #sizes = alpha$se,
+                ci_column = 4,
+                #ref_line = 1,
+                xlim = c(0.4, 1),
+                ticks_at = c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+                #x_trans = c("log10"),
+                xlab = "Hazard ratio",
+                theme = tm)
+
+# Print plot
+plot(alpha_ft)
+
+# Save plots to PDF, specifying dimensions
+pdf("drugCox.pdf", width = 15, height = 10)
+print(alpha_ft)
+dev.off()
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
