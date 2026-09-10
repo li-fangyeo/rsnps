@@ -1,0 +1,293 @@
+---
+title: "Linear models DBH"
+author: "Li-Fang Yeo"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Linear regression models for clinical biomarkers, systolic and diastolic blood pressure, ventricular rate.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+#| echo: false
+library(survival)
+library(ggplot2)
+library(survminer)
+library(dplyr)
+library(lme4)
+library(mgcv)
+
+```
+
+```{r}
+#Linear mixed model for lab measurements
+#filter for creatinine < 2000
+labs <- df_creatinine %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10)) %>%
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED < 2000)
+
+```
+
+```{r}
+#log-transform
+labs$log_val <- log(labs$MEASUREMENT_VALUE_HARMONIZED)
+
+```
+
+Linear regression models
+
+```{r}
+lin <- lm(log_val ~ allele + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+
+#plot
+ggplot(labs_first, aes(x = EVENT_AGE, y = MEASUREMENT_VALUE_HARMONIZED, color = allele)) + 
+  geom_smooth() + 
+  theme_classic() + 
+  ggtitle("First creatinine measure")
+```
+
+Blood pressure models
+
+```{r}
+labs <- df_bp_first %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10))
+
+hist(labs$SYSTOLIC_BP)
+hist(labs$SYSTOLIC_BP[labs$SYSTOLIC_BP > 6])
+plot(SYSTOLIC_BP ~ allele, data=labs)
+```
+
+```{r}
+#linear model
+lin <- lm(SYSTOLIC_BP ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+
+lin <- lm(DIASTOLIC_BP ~allele + SEX + EVENT_AGE, data = labs)
+
+lin <- lm(DIASTOLIC_BP ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+coef(lin)
+confint(lin)
+
+
+ggplot(result, aes(x = EVENT_AGE, y = SYSTOLIC_BP, color = allele)) + 
+  geom_smooth(method = "lm") + 
+  theme_classic() + 
+  ggtitle("First BP measure")
+```
+
+(NT-proBNP) Natriuretic peptide, B type N-terminal propeptide
+
+```{r}
+#filter 
+labs <- df_probnp %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10)) %>%
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED > 0.0001) %>%
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED <250000)
+
+#log-transform
+labs$log_val <- log(labs$MEASUREMENT_VALUE_HARMONIZED)
+```
+
+```{r}
+#QC
+hist(labs$MEASUREMENT_VALUE_HARMONIZED[labs$MEASUREMENT_VALUE_HARMONIZED > 50000])
+hist(labs$log_val)
+hist(labs_first$log_val[labs_first$log_val > 6])
+plot(log_val ~ allele, data=labs_first)
+```
+
+```{r}
+lin <- lm(log_val ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+exp(coef(lin))
+
+#plot
+ggplot(labs_first, aes(x = EVENT_AGE, y = log_val, color = allele)) + 
+  geom_smooth() + 
+  theme_classic() + 
+  ggtitle("First pBNP measure")
+```
+
+```{r}
+#filter 
+labs <- df_uacr %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10)) %>%
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED < 6000) %>%
+  dplyr::mutate(MEASUREMENT_VALUE_HARMONIZED = if_else(MEASUREMENT_VALUE_HARMONIZED == 0, 0.0001, MEASUREMENT_VALUE_HARMONIZED))
+
+
+#log-transform
+labs$log_val <- log(labs$MEASUREMENT_VALUE_HARMONIZED)
+```
+
+```{r}
+lin <- lm(log_val ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+```
+
+Ventricular rate from ECG data
+
+```{r}
+labs <- df_ecg %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10)) 
+
+#log-transform
+labs$log_val <- log(labs$VentricularRate)
+hist(labs$log_val)
+```
+
+```{r}
+lin <- lm(log_val ~allele + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+```
+
+```{r}
+#filter 
+labs <- df_hemac %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10, COUNT)) %>%
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED < 100) %>%
+  dplyr::mutate(MEASUREMENT_VALUE_HARMONIZED = ifelse( MEASUREMENT_VALUE_HARMONIZED < 1, MEASUREMENT_VALUE_HARMONIZED * 100, MEASUREMENT_VALUE_HARMONIZED))
+
+```
+
+```{r}
+lin <- lm(MEASUREMENT_VALUE_HARMONIZED ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+```
+
+```{r}
+labs <- df_plate %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10, COUNT)) %>%
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED < 2000)
+
+#log-transform
+labs$log_val <- log(labs$MEASUREMENT_VALUE_HARMONIZED)
+```
+
+```{r}
+lin <- lm(log_val ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+```
+
+```{r}
+labs <- df_normetanephrine %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10))
+
+hist(labs$MEASUREMENT_VALUE_HARMONIZED)
+hist(labs$MEASUREMENT_VALUE_HARMONIZED[labs$MEASUREMENT_VALUE_HARMONIZED <5])
+plot(log_val ~ allele, data=labs)
+
+#log-transform
+labs$log_val <- log(labs$MEASUREMENT_VALUE_HARMONIZED)
+```
+
+```{r}
+lin <- lm(log_val ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+```
+
+```{r}
+labs <- df_metanephrine %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10)) 
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED < 2)
+
+hist(labs$MEASUREMENT_VALUE_HARMONIZED)
+hist(labs$MEASUREMENT_VALUE_HARMONIZED[labs$MEASUREMENT_VALUE_HARMONIZED <2])
+plot(log_val ~ allele, data=labs)
+
+#log-transform
+labs$log_val <- log(labs$MEASUREMENT_VALUE_HARMONIZED)
+```
+
+TG/HDL ratio as insulin resistance surrogate marker
+
+```{r}
+labs <- df_ratio %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10))
+
+hist(labs$TG_HDL_ratio)
+hist(labs$TG_HDL_ratio[labs$TG_HDL_ratio > 50])
+plot(TG_HDL_ratio ~ allele, data=labs)
+
+labs$log_val <- log(labs$TG_HDL_ratio)
+plot(log_val ~ allele, data=labs)
+```
+
+```{r}
+lin <- lm(log_val ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+
+lin <- lm(log_val ~allele + SEX + EVENT_AGE, data = labs)
+
+```
+
+HbA1c
+
+```{r}
+labs <- df_hb %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(EVENT_AGE, .by_group = TRUE) %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10)) %>%
+  dplyr::filter(MEASUREMENT_VALUE_HARMONIZED < 600)
+
+hist(labs$MEASUREMENT_VALUE_HARMONIZED)
+hist(labs$MEASUREMENT_VALUE_HARMONIZED[labs$MEASUREMENT_VALUE_HARMONIZED > 200])
+plot(MEASUREMENT_VALUE_HARMONIZED ~ allele, data=labs)
+
+labs$log_val <- log(labs$MEASUREMENT_VALUE_HARMONIZED)
+plot(log_val ~ allele, data=labs)
+```
+
+```{r}
+lin <- lm(log_val ~allele2 + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+
+lin <- lm(log_val ~allele + SEX + EVENT_AGE, data = labs)
+summary(lin)
+confint(lin)
+```

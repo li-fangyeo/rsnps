@@ -1,0 +1,479 @@
+---
+title: "Coxph"
+author: "Li-Fang Yeo"
+format: html
+editor: visual
+---
+
+## Coxph
+
+```{r, output=FALSE}
+library(survival)
+library(ggplot2)
+library(survminer)
+library(dplyr)
+library(cowplot)
+library(gridExtra)
+```
+
+# Preparing data
+
+```{r}
+#endpoints
+c_endpoints <- c("I9_HYPTENS",
+                 "I9_CVD", 
+                 #"I9_MI", 
+                 #"I9_STR_SAH",
+                 #"I9_HYPOTE",
+                 #"G6_PARKINSON",
+                 #"I9_AF",
+                 #"N14_CHRONKIDNEYDIS",
+                 "I9_VTE") 
+                 #"T2D")
+
+c_endpoints <- c("T2D")
+```
+
+Endpoint: Cardiovascular disease FUNCTION
+
+```{r}
+endpoint_cox_model <- function(disease) {
+  #read in data
+  disease_ep <- df_endpoints %>%
+    dplyr::filter(ENDPOINT == disease) %>% 
+    dplyr::right_join(df_pheno, by = "FINNGENID") %>%
+    rename(STATUS = CONTROL_CASE_EXCL) %>%
+    dplyr::mutate(SEX = as.factor(SEX)) %>%
+    dplyr::mutate(allele2 = dplyr::case_when(allele == "REFERENCE" ~ "REFERENCE",TRUE ~ "CARRIERS") %>%
+    factor(levels = c("REFERENCE", "CARRIERS")))
+
+#Cox model
+surv_object <- Surv(time = disease_ep$AGE, event = disease_ep$STATUS)
+
+fit.coxph_all <- coxph(surv_object ~ allele + SEX + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data = disease_ep)
+
+fit.coxph_2 <- coxph(surv_object ~ allele2 + SEX + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data = disease_ep)
+#return a list containing df and cox
+return(list(df = disease_ep,
+            cox = fit.coxph_all,
+            cox2 = fit.coxph_2))
+}
+
+extract_cox <- function(fit, disease, allele_rows) {
+
+  summ <- summary(fit)
+  coefs <- summ$coefficients
+  ci <- summ$conf.int
+
+  # keep only allele rows
+  keep <- rownames(coefs) %in% allele_rows
+  coefs <- coefs[keep, , drop = FALSE]
+  ci <- ci[keep, , drop = FALSE]
+
+  tibble::tibble(
+    disease  = disease,
+    genotype = rownames(coefs),
+    HR       = ci[, "exp(coef)"],
+    lower95  = ci[, "lower .95"],
+    upper95  = ci[, "upper .95"],
+    p        = coefs[, "Pr(>|z|)"]
+  )
+}
+```
+
+```{r}
+#c_endpoints is the list of endpoints
+results <- lapply(c_endpoints, function(d) {
+
+  fit <- endpoint_cox_model(d)
+
+  # allele model (3-level  2 rows)
+  df1 <- extract_cox(
+    fit = fit$cox,
+    disease = d,
+    allele_rows = c("alleleHOMOZYGOUS", "alleleHETEROZYGOUS")
+  )
+
+  # allele2 model (REFERENCE vs CARRIER  1 row)
+  df2 <- extract_cox(
+    fit = fit$cox2,
+    disease = d,
+    allele_rows = c("allele2CARRIERS")
+  )
+
+  dplyr::bind_rows(df1, df2)
+})
+
+#Final output
+final_df <- dplyr::bind_rows(results)
+```
+
+```{r}
+#Refining columns in final output
+final_df <- final_df %>%
+  #tibble::rownames_to_column(var = "Genotype") %>%
+  dplyr::mutate(disease = recode(disease,
+                               "I9_HYPTENS" = "Hypertension",
+                               "I9_CVD" = "Cardiovascular disease",
+                               #"I9_MI" = "Myocardial infarction",
+                               #"I9_STR_SAH" = "Stroke",
+                               #"I9_HYPOTE" = "Orthostatic hypotension",
+                               #"G6_PARKINSON" = "Parkinson's disease",
+                               #"I9_AF" = "Atrial fibrillation",
+                               #"N14_CHRONKIDNEYDIS" = "Chronic kidney disease",
+                               "I9_VTE" = "Venous thromboembolism")) %>%
+  mutate(genotype = case_when(
+  grepl("HOMOZYGOUS", genotype, ignore.case = TRUE) ~ "Homozygous",
+  grepl("CARRIERS",    genotype, ignore.case = TRUE) ~ "Carriers",
+  TRUE ~ "Heterozygous"))
+
+final_df <- final_df %>%
+  mutate(across(3:6, as.numeric)) %>%
+  dplyr::mutate_at(c(3:5),round,2) %>%
+  dplyr::mutate_at(c(6),round,3)
+
+#final_df$`95% CI` <-  sprintf("%s - %s",
+                                     # final_df$`lower95`, final_df$`upper95`)
+```
+
+Cumulative incidence plots
+
+```{r}
+endpoint_survfit <- function(disease) {
+  #read in data
+  disease_ep <- df_endpoints %>%
+    dplyr::filter(ENDPOINT == disease) %>% 
+    dplyr::right_join(df_pheno, by = "FINNGENID") %>%
+    rename(STATUS = CONTROL_CASE_EXCL) %>%
+    dplyr::mutate(SEX = as.factor(SEX)) %>%
+    dplyr::select(-c(allele2, PC1:PC10)) %>%
+    as.data.frame()
+  
+  #surfit
+  fits <- survfit(Surv(AGE, STATUS) ~ allele, data = disease_ep)
+
+return(list(
+  data = disease_ep,
+  fits = fits
+))
+}
+
+title_list <- c(
+  "Hypertension",
+  "Cardiovascular disease",
+  #"Myocardial infarction",
+  #"Stroke",
+  #"Orthostatic hypotension",
+  #"Parkinson's disease",
+  #"Atrial fibrillation",
+  #"Chronic kidney disease",
+  "Venous thromboembolism"
+)
+
+#running a list of survfit
+results <- lapply(c_endpoints, endpoint_survfit)
+names(results) <- c_endpoints
+```
+
+```{r}
+#plotting the list
+plot_endpoint <- function(res, title) {
+  ggsurvplot(
+    fit = res$fits,
+    data = res$data,
+    fun = "event",
+    risk.table = FALSE,
+    censor = FALSE,
+    ggtheme = theme_classic(base_size = 14),
+    legend.title = "Genotype",
+    legend.labs = levels(res$data$allele),
+    pval = TRUE,
+    pval.coord = c(25, 0.3),
+    pval.size = 5,
+    xlim = c(20,80),
+    #ylim = c(0.3, 1.0),
+    title = title,
+    palette = c(
+        "REFERENCE"     = "gold",
+        "HETEROZYGOUS"  = "#A6CEE3",
+        "HOMOZYGOUS"    = "darkblue"
+      )
+  )
+}
+
+#get a list of survplots
+plots <- mapply(
+  FUN = plot_endpoint,
+  res = results,
+  title = title_list,
+  SIMPLIFY = FALSE
+)
+
+#extract xplot for plotting
+plotlist <- lapply(plots, function(x) x$plot)
+
+#removes axis title to get one shared one
+plotlist <- lapply(plotlist, function(p) {
+  p + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+})
+
+grid <- ggarrange(
+  plotlist = plotlist,
+  ncol = 3,
+  nrow = 3,
+  common.legend = TRUE,
+  legend = "bottom"
+)
+
+y_titles <- ggarrange(
+  text_grob("CI", rot = 90, size = 14),
+  text_grob("CI", rot = 90, size = 14),
+  text_grob("CI", rot = 90, size = 14),
+  ncol = 1
+)
+
+x_titles <- ggarrange(
+  text_grob("Age", size = 14),
+  text_grob("Age", size = 14),
+  text_grob("Age", size = 14),
+  ncol = 3
+)
+
+#to get shared y axis
+final_plot <- ggarrange(
+  y_titles,      # left column of y-axis titles
+  grid,          # main 3×3 grid
+  ncol = 2,
+  widths = c(0.1, 1)
+)
+
+#to get shared x axis
+final_plot <- ggarrange(
+  final_plot,
+  x_titles,
+  ncol = 1,
+  heights = c(1, 0.05)
+)
+
+final_plot
+```
+
+```{r}
+#modified for journal 
+#plotting the list
+plot_endpoint <- function(res, title) {
+  ggsurvplot(
+    fit = res$fits,
+    data = res$data,
+    fun = "event",
+    risk.table = FALSE,
+    censor = FALSE,
+    ggtheme = theme_classic(base_size = 14),
+    legend.title = "Genotype",
+    legend.labs = levels(res$data$allele),
+    pval = TRUE,
+    pval.coord = c(25, 0.3),
+    pval.size = 5,
+    xlim = c(20,80),
+    #ylim = c(0.3, 1.0),
+    title = title,
+    palette = c(
+         "REFERENCE"     = "gold",
+         "HETEROZYGOUS"  = "#A6CEE3",
+         "HOMOZYGOUS"    = "darkblue"
+      )
+  )
+}
+
+#get a list of survplots
+plots <- mapply(
+  FUN = plot_endpoint,
+  res = results,
+  title = title_list,
+  SIMPLIFY = FALSE
+)
+
+#extract xplot for plotting
+plotlist <- lapply(plots, function(x) x$plot)
+
+#removes axis title to get one shared one
+plotlist <- lapply(plotlist, function(p) {
+  p + theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+})
+
+
+
+library(patchwork)
+
+# Apply manual scale once
+plotlist_fixed <- lapply(
+  plotlist,
+  function(p) {
+    p +
+      scale_color_manual(
+        values = c(
+        "REFERENCE"     = "gold",
+        "HETEROZYGOUS"  = "#A6CEE3",
+        "HOMOZYGOUS"    = "darkblue"
+        ),
+      labels = c(
+        "REFERENCE" = "Non-carriers",
+        "HETEROZYGOUS" = "Heterozygotes",
+        "HOMOZYGOUS" = "Homozygotes"
+      )
+      ) +
+      theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none"
+      )
+  }
+)
+
+#change axis ticks for plot 3
+#plotlist[[3]] <- plotlist[[3]] +
+#  scale_y_continuous(
+#  breaks = c(0.0, 0.5, 1.0, 1.25, 1.5),
+#  limits = c(0.0, 1.5)
+#  )
+
+# 2. Combine plots horizontally and collect shared legend
+combined <- wrap_plots(plotlist_fixed, nrow = 1) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "right")
+
+
+# 3. Add shared axis titles using plot_annotation()
+final <- combined +
+  plot_annotation(
+    title = NULL,
+    subtitle = NULL,
+    caption = NULL,
+    theme = theme(
+      plot.margin = margin(10, 10, 10, 10)
+    )
+  ) &
+  labs(
+    x = "Age",
+    y = "Cumulative incidence"
+  )
+
+print(final)
+
+ggsave(filename = "CI_DBH.pdf",
+       plot = final,
+       width = 12,
+       height = 10,
+       units = "in")
+```
+
+Drug purchase - time to first drug purchase
+
+```{r}
+process_medication <- function(atc_code) {
+  
+  labs <- df_medpurch %>%
+  dplyr::filter(MEDICATION_ATC == atc_code) %>%
+  dplyr::group_by(FINNGENID) %>%
+  dplyr::arrange(MEDICATION_AGE, .by_group = TRUE) %>% #sort by EVENT_AGE within each group
+  dplyr::slice(1) %>%
+  dplyr::mutate(MEDS = 1) %>%
+  ungroup()
+  
+  # Filter, join, clean
+  drug <- labs %>%
+    dplyr::right_join(df_pheno, by="FINNGENID") %>%
+    tidyr::replace_na(list(MEDS = 0)) %>%
+    dplyr::mutate(MEDS = as.numeric(MEDS),
+                  AGE = dplyr::if_else(
+                                    MEDS == 0, AGE_AT_DEATH_OR_END_OF_FOLLOWUP, MEDICATION_AGE),
+                  AGE = as.numeric(AGE),
+                  SEX = as.factor(SEX)) %>%
+    dplyr::select(-c(MEDICATION_AGE, AGE_AT_DEATH_OR_END_OF_FOLLOWUP))
+    
+    
+  # cox model
+  surv_object <- Surv(time = drug$AGE, event = drug$MEDS)
+
+  fit.coxph_all <- coxph(surv_object ~ allele + SEX + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data = drug)
+  
+  fit.coxph_2 <- coxph(surv_object ~ allele2 + SEX + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data = drug)
+#return a list containing df and cox
+return(list(df = drug,
+            cox = fit.coxph_all,
+            cox2 = fit.coxph_2))
+}
+
+extract_cox <- function(fit, drug, allele_rows) {
+
+  summ <- summary(fit)
+  coefs <- summ$coefficients
+  ci <- summ$conf.int
+
+  # keep only allele rows
+  keep <- rownames(coefs) %in% allele_rows
+  coefs <- coefs[keep, , drop = FALSE]
+  ci <- ci[keep, , drop = FALSE]
+
+  tibble::tibble(
+    atc_code = drug,
+    genotype = rownames(coefs),
+    HR       = ci[, "exp(coef)"],
+    lower95  = ci[, "lower .95"],
+    upper95  = ci[, "upper .95"],
+    p        = coefs[, "Pr(>|z|)"]
+  )
+}
+
+
+med_count <- c("C03AA", "C09A", "C09C", "C07A", "C08CA")
+```
+
+```{r}
+#c_endpoints is the list of endpoints
+results <- lapply(med_count, function(d) {
+
+  fit <- process_medication(d)
+
+  # allele model (3-level  2 rows)
+  df1 <- extract_cox(
+    fit = fit$cox,
+    drug = d,
+    allele_rows = c("alleleHOMOZYGOUS", "alleleHETEROZYGOUS")
+  )
+
+  # allele2 model (REFERENCE vs CARRIER  1 row)
+  df2 <- extract_cox(
+    fit = fit$cox2,
+    drug = d,
+    allele_rows = c("allele2CARRIERS")
+  )
+
+  dplyr::bind_rows(df1, df2)
+})
+
+#Final output
+final_df <- dplyr::bind_rows(results)
+```
+
+```{r}
+# Combine into one dataframe
+final_df <- do.call(rbind, results)
+
+final_df <- final_df %>%
+  dplyr::mutate(drug = recode(atc_code,
+                            "C03AA" = "Diuretics-Thiazide",
+                            "C09A" = "ACE inhibitors",
+                            "C09C" = "ARBlockers",
+                            "C07A" = "Beta blockers",
+                            "C08CA" = "CCBlockers - Dihydropyridine")) %>%
+  dplyr::mutate(genotype = stringr::str_remove(genotype, "^allele")) %>%
+  dplyr::mutate(across(where(is.numeric), ~ round(.x, 3)))
+final_df
+```

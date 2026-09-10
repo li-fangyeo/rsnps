@@ -1,0 +1,47 @@
+---
+title: "Figures"
+author: "Li-Fang Yeo"
+format: html
+editor: visual
+---
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+DBH_protein <- DBH_olink_irn %>%
+  dplyr::left_join(df_pheno, by="FINNGENID") %>%
+  dplyr::select(-c(PC1:PC10))
+```
+
+You can add options to executable code like this
+
+```{r}
+plot(DBH_irn ~ allele, data=DBH_protein)
+```
+
+```{r}
+DBH_protein$allele <- factor(DBH_protein$allele, levels = c("REFERENCE", "HETEROZYGOUS", "HOMOZYGOUS"))
+
+p<- ggplot(DBH_protein, aes(x = allele, y = DBH_irn)) +
+  geom_violin(alpha = 0.6) +
+  geom_boxplot(outlier.shape = NA, width = 0.1, fill = "white") +
+  coord_flip() +
+  theme_classic() +
+  labs(
+    x = NULL,
+    y = "DBH protein expression level (IRN)"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16)
+  )
+
+ggsave(filename = "olink_violin.pdf",
+       plot = p, 
+       width = 10,
+       height = 8,
+       units = "in")
+```
