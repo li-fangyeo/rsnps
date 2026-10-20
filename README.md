@@ -1,6 +1,6 @@
 # rSNPs - a FINNGEN r13 study
 
-A Finnish-Enriched DBH Missense Variant and Lifelong Reduction in Norepinephrine Biosynthesis: Associations with Hypertension and Cardiovascular Disease
+A Finnish-Enriched DBH Missense Variant (rs77273740) and Lifelong Reduction in Norepinephrine Biosynthesis: Associations with Hypertension and Cardiovascular Disease
 
 ## Aims
 To investigate the long-term consequences of reduced Dopamine β-hydroxylase (DBH) function using clinical biomarkers, and clinical endpoints.
